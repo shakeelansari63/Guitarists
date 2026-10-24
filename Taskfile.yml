@@ -26,6 +26,22 @@ tasks:
     cmds:
       - go build -trimpath -buildvcs=false -tags production -ldflags="{{.LD_FLAGS}}" -o {{.BIN_DIR}}/{{.BIN_NAME}} .
 
+  tag:
+    desc: Create Git tag and push to Git Origin
+    cmds:
+      - |
+        VERSION_TAG=`cat build/config.yml | grep "version: v" | cut -d':' -f2 | sed 's/ //g'`
+        if [ -z "$VERSION_TAG" ]; then
+          echo "Could not determine version from build/config.yml"
+          exit 1
+        fi
+        if git rev-parse -q --verify "refs/tags/$VERSION_TAG" >/dev/null; then
+          echo "Version tag $VERSION_TAG already exists"
+          exit 1
+        fi
+        git tag "$VERSION_TAG"
+        git push origin "$VERSION_TAG"
+
   dev:
     desc: Runs the application with hot reload
     cmds:
