@@ -2,9 +2,13 @@ version: '3'
 
 vars:
   APP_NAME: guitarists
+  APP_DISPLAY_NAME: Guitarists
   BIN_DIR: bin
   BIN_NAME: '{{.APP_NAME}}{{if eq OS "windows"}}.exe{{end}}'
   LD_FLAGS: '{{if eq OS "windows"}}-w -s -H windowsgui{{else}}-w -s{{end}}'
+  APP_VERSION:
+    sh: 'grep "version: v" build/config.yml | cut -d: -f2 | sed "s/ //g; s/^v//"'
+  APPIMAGE_ARCH: '{{if eq ARCH "amd64"}}x86_64{{else}}aarch64{{end}}'
 
 tasks:
   install:
@@ -20,11 +24,65 @@ tasks:
     cmds:
       - npm run build
 
+  icons:
+    desc: Generates platform icon assets
+    dir: build
+    cmds:
+      - mkdir -p windows darwin
+      - wails3 generate icons -input appicon.png -windowsfilename windows/icon.ico -macfilename darwin/icons.icns
+
+  metadata:
+    desc: Generates platform packaging metadata
+    cmds:
+      - wails3 update build-assets -name "{{.APP_DISPLAY_NAME}}" -binaryname "{{.APP_NAME}}" -config build/config.yml -dir build -productversion "{{.APP_VERSION}}" -silent
+
   build:
     desc: Builds the production application
-    deps: [frontend]
+    deps: [frontend, icons, metadata]
     cmds:
-      - go build -trimpath -buildvcs=false -tags production -ldflags="{{.LD_FLAGS}}" -o {{.BIN_DIR}}/{{.BIN_NAME}} .
+      - cmd: wails3 generate syso -arch {{ARCH}} -icon build/windows/icon.ico -manifest build/windows/wails.exe.manifest -info build/windows/info.json -out wails_windows_{{ARCH}}.syso
+        platforms: [windows]
+      - go build -trimpath -buildvcs=false -tags production -ldflags="{{.LD_FLAGS}} -X main.version={{.APP_VERSION}}" -o {{.BIN_DIR}}/{{.BIN_NAME}} .
+      - cmd: powershell -NoProfile -Command "Remove-Item -Force -ErrorAction SilentlyContinue wails_windows_*.syso"
+        platforms: [windows]
+
+  package:
+    desc: Builds the platform package
+    cmds:
+      - task: 'package:{{OS}}'
+
+  package:windows:
+    desc: Builds the Windows executable
+    deps: [build]
+
+  package:linux:
+    desc: Builds the Linux AppImage
+    deps: [build]
+    cmds:
+      - task: linux:desktop
+      - cp build/appicon.png build/linux/{{.APP_NAME}}.png
+      - mkdir -p build/linux/appimage/build
+      - rm -f {{.BIN_DIR}}/{{.APP_NAME}}-linux-{{ARCH}}.AppImage
+      - wails3 generate appimage -binary {{.BIN_DIR}}/{{.APP_NAME}} -icon build/linux/{{.APP_NAME}}.png -desktopfile build/linux/{{.APP_NAME}}.desktop -outputdir {{.BIN_DIR}} -builddir build/linux/appimage/build
+      - mv {{.BIN_DIR}}/{{.APP_NAME}}-{{.APPIMAGE_ARCH}}.AppImage {{.BIN_DIR}}/{{.APP_NAME}}-linux-{{ARCH}}.AppImage
+
+  package:darwin:
+    desc: Builds the macOS app bundle
+    deps: [build]
+    cmds:
+      - rm -rf "{{.BIN_DIR}}/{{.APP_DISPLAY_NAME}}.app"
+      - mkdir -p "{{.BIN_DIR}}/{{.APP_DISPLAY_NAME}}.app/Contents/MacOS" "{{.BIN_DIR}}/{{.APP_DISPLAY_NAME}}.app/Contents/Resources"
+      - cp "{{.BIN_DIR}}/{{.APP_NAME}}" "{{.BIN_DIR}}/{{.APP_DISPLAY_NAME}}.app/Contents/MacOS/{{.APP_NAME}}"
+      - cp build/darwin/icons.icns "{{.BIN_DIR}}/{{.APP_DISPLAY_NAME}}.app/Contents/Resources/icons.icns"
+      - cp build/darwin/Info.plist "{{.BIN_DIR}}/{{.APP_DISPLAY_NAME}}.app/Contents/Info.plist"
+      - cmd: xattr -cr "{{.BIN_DIR}}/{{.APP_DISPLAY_NAME}}.app" && codesign --force --deep --sign - "{{.BIN_DIR}}/{{.APP_DISPLAY_NAME}}.app"
+        platforms: [darwin]
+
+  linux:desktop:
+    desc: Generates the Linux desktop entry
+    cmds:
+      - mkdir -p build/linux
+      - wails3 generate .desktop -name "{{.APP_DISPLAY_NAME}}" -exec "{{.APP_NAME}}" -icon "{{.APP_NAME}}" -categories "AudioVideo;Audio;Utility;" -comment "Practice tools for expert guitarists" -outputfile build/linux/{{.APP_NAME}}.desktop
 
   tag:
     desc: Create Git tag and push to Git Origin
@@ -61,4 +119,3 @@ tasks:
     desc: Runs Go static analysis
     cmds:
       - go vet ./...
-

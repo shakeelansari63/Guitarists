@@ -1,4 +1,5 @@
 import { Screens, Window } from "@wailsio/runtime";
+import appIconUrl from "../../build/appicon.png";
 import "./styles/main.css";
 import { SystemService } from "./lib/api";
 import type { View } from "./lib/view";
@@ -73,7 +74,9 @@ app.innerHTML = `
   <div class="app-shell">
     <header class="app-header">
       <div class="brand">
-        <div class="brand-mark" aria-hidden="true">G</div>
+        <div class="brand-mark" aria-hidden="true">
+          <img src="${appIconUrl}" alt="" width="42" height="42" />
+        </div>
         <div class="brand-copy">
           <strong>Guitarists</strong>
           <span>Practice tools for the serious player</span>

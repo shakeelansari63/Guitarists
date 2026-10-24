@@ -41,4 +41,12 @@ frontend/bindings/*
 
 # Build output
 bin/
+dist/
 /guitarists
+*.syso
+
+# Generated packaging assets
+build/darwin/
+build/ios/
+build/linux/
+build/windows/

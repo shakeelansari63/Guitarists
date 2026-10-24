@@ -7,7 +7,7 @@ info:
   description: Practice tools for expert guitarists
   copyright: (c) 2026 Guitarists
   comments: Tuner, metronome, and tab editor
-  version: v0.1.2
+  version: v0.1.3
 
 dev_mode:
   root_path: .

@@ -9,10 +9,13 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
-const version = "0.1.0"
+var version = "dev"
 
 //go:embed all:frontend/dist
 var assets embed.FS
+
+//go:embed build/appicon.png
+var appIcon []byte
 
 func main() {
 	tunerService := services.NewTunerService()
@@ -27,6 +30,7 @@ func main() {
 	app := application.New(application.Options{
 		Name:        "Guitarists",
 		Description: "Tools for expert guitarists: tuner, metronome, and tab editor.",
+		Icon:        appIcon,
 		Mac: application.MacOptions{
 			ApplicationShouldTerminateAfterLastWindowClosed: true,
 		},
