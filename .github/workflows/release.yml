@@ -1,0 +1,217 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Prepare release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "Replacing existing release for $tag"
+            gh release delete "$tag" --yes
+          fi
+
+          gh release create "$tag" \
+            --draft \
+            --verify-tag \
+            --title "Guitarists ${tag}" \
+            --generate-notes
+
+  build:
+    name: Build ${{ matrix.name }}
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux x64
+            os: ubuntu-latest
+            asset: guitarists-linux-amd64
+          - name: Windows x64
+            os: windows-latest
+            asset: guitarists-windows-amd64.exe
+          - name: macOS Intel
+            os: macos-15-intel
+            asset: guitarists-macos-amd64
+          - name: macOS Apple Silicon
+            os: macos-latest
+            asset: guitarists-macos-arm64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: bash
+    env:
+      CGO_ENABLED: "1"
+      ASSET: ${{ matrix.asset }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config libgtk-4-dev libwebkitgtk-6.0-dev
+
+      - name: Install Windows C compiler
+        if: runner.os == 'Windows'
+        run: |
+          choco install mingw -y --no-progress
+          gcc --version
+          echo "CC=gcc" >> "$GITHUB_ENV"
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
+
+      - name: Test
+        run: go test ./...
+
+      - name: Build executable
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          go build \
+            -trimpath \
+            -buildvcs=false \
+            -tags production \
+            -ldflags="-w -s" \
+            -o "dist/${ASSET}" .
+
+      - name: Generate checksum
+        run: |
+          set -euo pipefail
+          cd dist
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum "$ASSET" > "$ASSET.sha256"
+          else
+            shasum -a 256 "$ASSET" > "$ASSET.sha256"
+          fi
+
+      - name: Upload final executable to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          gh release upload "$GITHUB_REF_NAME" \
+            "dist/${ASSET}" \
+            "dist/${ASSET}.sha256" \
+            --clobber
+
+  publish:
+    name: Publish release
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      actions: write
+    steps:
+      - name: Verify expected release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          assets="$(gh release view "$GITHUB_REF_NAME" --json assets --jq '.assets[].name')"
+          for asset in \
+            guitarists-linux-amd64 \
+            guitarists-windows-amd64.exe \
+            guitarists-macos-amd64 \
+            guitarists-macos-arm64; do
+            if ! grep -qx "$asset" <<< "$assets"; then
+              echo "Missing release asset: $asset"
+              exit 1
+            fi
+          done
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release edit "$GITHUB_REF_NAME" --draft=false --latest
+
+      - name: Delete old releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          current="${GITHUB_REF_NAME}"
+          gh release list --limit 1000 --json tagName --jq '.[].tagName' |
+            while IFS= read -r tag; do
+              if [ -z "$tag" ] || [ "$tag" = "$current" ]; then
+                continue
+              fi
+              echo "Deleting old release: $tag"
+              gh release delete "$tag" --yes
+            done
+
+      - name: Delete old workflow artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          artifacts="$(gh api --paginate \
+            "/repos/${GITHUB_REPOSITORY}/actions/artifacts?per_page=100" \
+            --jq '.artifacts[].id')"
+          if [ -n "$artifacts" ]; then
+            while IFS= read -r id; do
+              if [ -z "$id" ]; then
+                continue
+              fi
+              echo "Deleting workflow artifact: $id"
+              gh api -X DELETE "/repos/${GITHUB_REPOSITORY}/actions/artifacts/${id}"
+            done <<< "$artifacts"
+          fi

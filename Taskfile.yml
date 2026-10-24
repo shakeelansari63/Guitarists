@@ -1,0 +1,46 @@
+version: '3'
+
+vars:
+  APP_NAME: guitarists
+  BIN_DIR: bin
+
+tasks:
+  install:
+    desc: Installs frontend dependencies
+    dir: frontend
+    cmds:
+      - npm install
+
+  frontend:
+    desc: Builds the frontend
+    dir: frontend
+    deps: [install]
+    cmds:
+      - npm run build
+
+  build:
+    desc: Builds the production application
+    deps: [frontend]
+    cmds:
+      - go build -trimpath -buildvcs=false -tags production -ldflags="-w -s" -o {{.BIN_DIR}}/{{.APP_NAME}} .
+
+  dev:
+    desc: Runs the application with hot reload
+    cmds:
+      - wails3 dev -config ./build/config.yml
+
+  run:
+    desc: Runs the built application
+    cmds:
+      - ./{{.BIN_DIR}}/{{.APP_NAME}}
+
+  test:
+    desc: Runs Go tests
+    cmds:
+      - go test ./...
+
+  vet:
+    desc: Runs Go static analysis
+    cmds:
+      - go vet ./...
+

@@ -1,0 +1,40 @@
+version: '3'
+
+info:
+  companyName: Guitarists
+  productName: Guitarists
+  productIdentifier: app.guitarists.desktop
+  description: Practice tools for expert guitarists
+  copyright: (c) 2026 Guitarists
+  comments: Tuner, metronome, and tab editor
+  version: v0.1.0
+
+dev_mode:
+  root_path: .
+  log_level: warn
+  debounce: 800
+  ignore:
+    dir:
+      - .git
+      - node_modules
+      - frontend
+      - bin
+      - build
+    file:
+      - .DS_Store
+      - .gitignore
+      - .gitkeep
+    watched_extension:
+      - "*.go"
+    git_ignore: true
+  executes:
+    - cmd: npm --prefix frontend install
+      type: once
+    - cmd: npm --prefix frontend run dev -- --port 9245 --strictPort
+      type: background
+    - cmd: go mod tidy
+      type: blocking
+    - cmd: go build -buildvcs=false -o bin/guitarists .
+      type: blocking
+    - cmd: ./bin/guitarists
+      type: primary
