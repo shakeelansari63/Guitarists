@@ -3,6 +3,8 @@ version: '3'
 vars:
   APP_NAME: guitarists
   BIN_DIR: bin
+  BIN_NAME: '{{.APP_NAME}}{{if eq OS "windows"}}.exe{{end}}'
+  LD_FLAGS: '{{if eq OS "windows"}}-w -s -H windowsgui{{else}}-w -s{{end}}'
 
 tasks:
   install:
@@ -22,7 +24,7 @@ tasks:
     desc: Builds the production application
     deps: [frontend]
     cmds:
-      - go build -trimpath -buildvcs=false -tags production -ldflags="-w -s" -o {{.BIN_DIR}}/{{.APP_NAME}} .
+      - go build -trimpath -buildvcs=false -tags production -ldflags="{{.LD_FLAGS}}" -o {{.BIN_DIR}}/{{.BIN_NAME}} .
 
   dev:
     desc: Runs the application with hot reload
@@ -32,7 +34,7 @@ tasks:
   run:
     desc: Runs the built application
     cmds:
-      - ./{{.BIN_DIR}}/{{.APP_NAME}}
+      - ./{{.BIN_DIR}}/{{.BIN_NAME}}
 
   test:
     desc: Runs Go tests

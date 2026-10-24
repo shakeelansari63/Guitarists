@@ -1,9 +1,60 @@
+import { Screens, Window } from "@wailsio/runtime";
 import "./styles/main.css";
 import { SystemService } from "./lib/api";
 import type { View } from "./lib/view";
 import { createMetronomeView } from "./views/metronome";
 import { createTabsView } from "./views/tabs";
 import { createTunerView } from "./views/tuner";
+
+const WINDOW_MIN_WIDTH = 900;
+const WINDOW_MIN_HEIGHT = 620;
+const WINDOW_MAX_WIDTH = 1600;
+const WINDOW_MAX_HEIGHT = 1000;
+const WINDOW_SCREEN_MARGIN = 96;
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
+}
+
+async function fitWindowToScreen(): Promise<void> {
+  let availableWidth = window.screen.availWidth;
+  let availableHeight = window.screen.availHeight;
+
+  try {
+    const screen = await Screens.GetPrimary();
+    availableWidth = screen.WorkArea.Width;
+    availableHeight = screen.WorkArea.Height;
+  } catch {
+  }
+
+  const width = Math.round(
+    clamp(
+      availableWidth - WINDOW_SCREEN_MARGIN,
+      WINDOW_MIN_WIDTH,
+      WINDOW_MAX_WIDTH,
+    ),
+  );
+  const height = Math.round(
+    clamp(
+      availableHeight - WINDOW_SCREEN_MARGIN,
+      WINDOW_MIN_HEIGHT,
+      WINDOW_MAX_HEIGHT,
+    ),
+  );
+
+  try {
+    await Window.SetSize(width, height);
+    await Window.Center();
+  } catch {
+  }
+
+  try {
+    await Window.Show();
+  } catch {
+  }
+}
+
+void fitWindowToScreen();
 
 type ViewName = "tuner" | "metronome" | "tabs";
 

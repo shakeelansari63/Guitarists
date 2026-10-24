@@ -120,11 +120,15 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist
+          ldflags="-w -s"
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            ldflags="-w -s -H windowsgui"
+          fi
           go build \
             -trimpath \
             -buildvcs=false \
             -tags production \
-            -ldflags="-w -s" \
+            -ldflags="$ldflags" \
             -o "dist/${ASSET}" .
 
       - name: Generate checksum

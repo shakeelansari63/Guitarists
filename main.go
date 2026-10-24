@@ -3,6 +3,7 @@ package main
 import (
 	"embed"
 	"log"
+	"time"
 
 	"github.com/freak/guitarists/internal/services"
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -40,15 +41,21 @@ func main() {
 		},
 	})
 
-	app.Window.NewWithOptions(application.WebviewWindowOptions{
+	win := app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Name:             "main",
 		Title:            "Guitarists",
-		Width:            1180,
-		Height:           800,
+		Width:            1440,
+		Height:           900,
 		MinWidth:         900,
 		MinHeight:        620,
+		InitialPosition:  application.WindowCentered,
+		Hidden:           true,
 		BackgroundColour: application.NewRGB(18, 20, 24),
 		URL:              "/",
+	})
+
+	time.AfterFunc(2*time.Second, func() {
+		win.Show()
 	})
 
 	if err := app.Run(); err != nil {
