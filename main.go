@@ -29,7 +29,7 @@ func main() {
 
 	app := application.New(application.Options{
 		Name:        "Guitarists",
-		Description: "Tools for expert guitarists: tuner, metronome, and tab editor.",
+		Description: "Tools for expert guitarists: tuner, metronome, and song editor.",
 		Icon:        appIcon,
 		Mac: application.MacOptions{
 			ApplicationShouldTerminateAfterLastWindowClosed: true,

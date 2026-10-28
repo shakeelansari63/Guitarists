@@ -18,7 +18,7 @@ type TabPlaybackState struct {
 	Line    int  `json:"line"`
 }
 
-// TabService loads and saves tablature files in the documents directory.
+// TabService loads and saves song files in the documents directory.
 type TabService struct {
 	store *tabs.Store
 
@@ -34,11 +34,11 @@ type TabService struct {
 func NewTabService() (*TabService, error) {
 	dir, err := platform.TabsDir()
 	if err != nil {
-		return nil, fmt.Errorf("preparing tabs storage: %w", err)
+		return nil, fmt.Errorf("preparing song storage: %w", err)
 	}
 	store, err := tabs.NewStore(dir)
 	if err != nil {
-		return nil, fmt.Errorf("preparing tabs storage: %w", err)
+		return nil, fmt.Errorf("preparing song storage: %w", err)
 	}
 	return &TabService{store: store, line: -1}, nil
 }
@@ -46,22 +46,22 @@ func NewTabService() (*TabService, error) {
 // ServiceName implements application.ServiceName.
 func (s *TabService) ServiceName() string { return "TabService" }
 
-// Directory returns the absolute directory where tabs are stored.
+// Directory returns the absolute directory where songs are stored.
 func (s *TabService) Directory() string {
 	return s.store.Dir()
 }
 
-// New returns an empty tab document with default settings.
+// New returns an empty tab-only song with default settings.
 func (s *TabService) New() tabs.Tab {
 	return tabs.New()
 }
 
-// List returns stored tabs sorted by most recently modified.
+// List returns stored songs sorted by most recently modified.
 func (s *TabService) List() ([]tabs.Summary, error) {
 	return s.store.List()
 }
 
-// Load reads a tab by file name.
+// Load reads a song by file name.
 func (s *TabService) Load(name string) (tabs.Tab, error) {
 	tab, err := s.store.Load(name)
 	if err != nil {
@@ -70,22 +70,22 @@ func (s *TabService) Load(name string) (tabs.Tab, error) {
 	return *tab, nil
 }
 
-// Save validates and writes a tab. The .xml extension is added when missing.
+// Save validates and writes a song. The .xml extension is added when missing.
 func (s *TabService) Save(name string, tab tabs.Tab) (tabs.Summary, error) {
 	return s.store.Save(name, &tab)
 }
 
-// Delete removes a stored tab.
+// Delete removes a stored song.
 func (s *TabService) Delete(name string) error {
 	return s.store.Delete(name)
 }
 
-// Play renders the supplied tab and starts playback in the background.
+// Play renders the supplied song and starts playback in the background.
 func (s *TabService) Play(tab tabs.Tab) error {
 	return s.startPlayback(tab, -1)
 }
 
-// PlayLine plays a single zero-based line from the supplied tab.
+// PlayLine plays a single zero-based tab line from the supplied song.
 func (s *TabService) PlayLine(tab tabs.Tab, line int) error {
 	source := tab
 	source.Normalize()
@@ -94,6 +94,9 @@ func (s *TabService) PlayLine(tab tabs.Tab, line int) error {
 	}
 	if line < 0 || line >= len(source.Lines) {
 		return fmt.Errorf("line must be between 1 and %d", len(source.Lines))
+	}
+	if source.LineType(line) != tabs.LineTypeTab {
+		return fmt.Errorf("line %d is a chord line and cannot be played", line+1)
 	}
 	source.Lines = []tabs.Line{source.Lines[line]}
 	return s.startPlayback(source, line)
@@ -116,7 +119,7 @@ func (s *TabService) startPlayback(tab tabs.Tab, line int) error {
 		player, err := audio.NewClipPlayer()
 		if err != nil {
 			s.mu.Unlock()
-			return fmt.Errorf("starting tab playback: %w", err)
+			return fmt.Errorf("starting song playback: %w", err)
 		}
 		s.player = player
 	}

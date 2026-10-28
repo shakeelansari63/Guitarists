@@ -23,6 +23,9 @@ export interface TunerUpdate {
   autoDetect: boolean;
 }
 
+export type SongType = "tab" | "chord" | "mixed";
+export type SongLineKind = "tab" | "chord";
+
 export interface TabBeat {
   string: number;
   fret: number;
@@ -34,7 +37,9 @@ export interface TabMeasure {
 }
 
 export interface TabLine {
+  type: SongLineKind;
   lyrics: string;
+  chord: string;
   pause: number;
   measures: TabMeasure[];
 }
@@ -45,6 +50,8 @@ export interface Tab {
   artist: string;
   tuning: string;
   tempo: number;
+  type: SongType;
+  strumming: string;
   lines: TabLine[];
 }
 
@@ -56,6 +63,7 @@ export interface TabPlaybackState {
 export interface TabSummary {
   name: string;
   title: string;
+  type: SongType;
   size: number;
   modified: string;
 }

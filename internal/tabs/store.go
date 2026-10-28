@@ -18,10 +18,11 @@ const (
 	maxNameLen  = 100
 )
 
-// Summary is a lightweight description of a stored tab file.
+// Summary is a lightweight description of a stored song file.
 type Summary struct {
 	Name     string    `json:"name"`
 	Title    string    `json:"title"`
+	Type     string    `json:"type"`
 	Size     int64     `json:"size"`
 	Modified time.Time `json:"modified"`
 }
@@ -34,14 +35,14 @@ type Store struct {
 // NewStore creates a store rooted at dir, creating it when necessary.
 func NewStore(dir string) (*Store, error) {
 	if strings.TrimSpace(dir) == "" {
-		return nil, errors.New("tabs directory is empty")
+		return nil, errors.New("songs directory is empty")
 	}
 	abs, err := filepath.Abs(dir)
 	if err != nil {
-		return nil, fmt.Errorf("resolving tabs directory: %w", err)
+		return nil, fmt.Errorf("resolving songs directory: %w", err)
 	}
 	if err := os.MkdirAll(abs, 0o755); err != nil {
-		return nil, fmt.Errorf("creating tabs directory %q: %w", abs, err)
+		return nil, fmt.Errorf("creating songs directory %q: %w", abs, err)
 	}
 	return &Store{dir: abs}, nil
 }
@@ -51,14 +52,14 @@ func (s *Store) Dir() string {
 	return s.dir
 }
 
-// List returns stored tabs sorted by most recently modified.
+// List returns stored songs sorted by most recently modified.
 func (s *Store) List() ([]Summary, error) {
 	entries, err := os.ReadDir(s.dir)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return []Summary{}, nil
 		}
-		return nil, fmt.Errorf("reading tabs directory: %w", err)
+		return nil, fmt.Errorf("reading songs directory: %w", err)
 	}
 
 	summaries := make([]Summary, 0, len(entries))
@@ -71,8 +72,9 @@ func (s *Store) List() ([]Summary, error) {
 			continue
 		}
 		summary := Summary{Name: entry.Name(), Size: info.Size(), Modified: info.ModTime()}
-		if title, err := titleOfFile(filepath.Join(s.dir, entry.Name())); err == nil {
+		if title, songType, err := metadataOfFile(filepath.Join(s.dir, entry.Name())); err == nil {
 			summary.Title = title
+			summary.Type = songType
 		}
 		summaries = append(summaries, summary)
 	}
@@ -86,20 +88,20 @@ func (s *Store) List() ([]Summary, error) {
 	return summaries, nil
 }
 
-func titleOfFile(path string) (string, error) {
+func metadataOfFile(path string) (string, string, error) {
 	f, err := os.Open(path)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	defer f.Close()
 	tab, err := Decode(io.LimitReader(f, maxFileSize))
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
-	return tab.Title, nil
+	return tab.Title, tab.Type, nil
 }
 
-// Load reads and validates a tab by file name.
+// Load reads and validates a song by file name.
 func (s *Store) Load(name string) (*Tab, error) {
 	path, err := s.resolve(name)
 	if err != nil {
@@ -107,29 +109,29 @@ func (s *Store) Load(name string) (*Tab, error) {
 	}
 	f, err := os.Open(path)
 	if err != nil {
-		return nil, fmt.Errorf("opening tab %q: %w", name, err)
+		return nil, fmt.Errorf("opening song %q: %w", name, err)
 	}
 	defer f.Close()
 
 	info, err := f.Stat()
 	if err != nil {
-		return nil, fmt.Errorf("inspecting tab %q: %w", name, err)
+		return nil, fmt.Errorf("inspecting song %q: %w", name, err)
 	}
 	if info.Size() > maxFileSize {
-		return nil, fmt.Errorf("tab %q is too large", name)
+		return nil, fmt.Errorf("song %q is too large", name)
 	}
 
 	tab, err := Decode(f)
 	if err != nil {
-		return nil, fmt.Errorf("loading tab %q: %w", name, err)
+		return nil, fmt.Errorf("loading song %q: %w", name, err)
 	}
 	return tab, nil
 }
 
-// Save validates and atomically writes a tab under name.
+// Save validates and atomically writes a song under name.
 func (s *Store) Save(name string, tab *Tab) (Summary, error) {
 	if tab == nil {
-		return Summary{}, errors.New("tab is nil")
+		return Summary{}, errors.New("song is nil")
 	}
 	path, err := s.resolve(name)
 	if err != nil {
@@ -150,42 +152,43 @@ func (s *Store) Save(name string, tab *Tab) (Summary, error) {
 
 	if _, err := tmp.Write(buf.Bytes()); err != nil {
 		tmp.Close()
-		return Summary{}, fmt.Errorf("writing tab: %w", err)
+		return Summary{}, fmt.Errorf("writing song: %w", err)
 	}
 	if err := tmp.Sync(); err != nil {
 		tmp.Close()
-		return Summary{}, fmt.Errorf("flushing tab: %w", err)
+		return Summary{}, fmt.Errorf("flushing song: %w", err)
 	}
 	if err := tmp.Close(); err != nil {
-		return Summary{}, fmt.Errorf("closing tab: %w", err)
+		return Summary{}, fmt.Errorf("closing song: %w", err)
 	}
 	if err := os.Chmod(tmpName, 0o644); err != nil {
-		return Summary{}, fmt.Errorf("setting tab permissions: %w", err)
+		return Summary{}, fmt.Errorf("setting song permissions: %w", err)
 	}
 	if err := os.Rename(tmpName, path); err != nil {
-		return Summary{}, fmt.Errorf("saving tab %q: %w", name, err)
+		return Summary{}, fmt.Errorf("saving song %q: %w", name, err)
 	}
 
 	info, err := os.Stat(path)
 	if err != nil {
-		return Summary{}, fmt.Errorf("inspecting saved tab: %w", err)
+		return Summary{}, fmt.Errorf("inspecting saved song: %w", err)
 	}
 	return Summary{
 		Name:     filepath.Base(path),
 		Title:    tab.Title,
+		Type:     normalSongType(tab.Type),
 		Size:     info.Size(),
 		Modified: info.ModTime(),
 	}, nil
 }
 
-// Delete removes a stored tab by file name.
+// Delete removes a stored song by file name.
 func (s *Store) Delete(name string) error {
 	path, err := s.resolve(name)
 	if err != nil {
 		return err
 	}
 	if err := os.Remove(path); err != nil {
-		return fmt.Errorf("deleting tab %q: %w", name, err)
+		return fmt.Errorf("deleting song %q: %w", name, err)
 	}
 	return nil
 }
@@ -230,7 +233,7 @@ func (s *Store) resolve(name string) (string, error) {
 	path := filepath.Join(s.dir, clean)
 	rel, err := filepath.Rel(s.dir, path)
 	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
-		return "", errors.New("file name escapes the tabs directory")
+		return "", errors.New("file name escapes the songs directory")
 	}
 	return path, nil
 }

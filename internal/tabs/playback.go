@@ -27,7 +27,7 @@ type PlaybackNote struct {
 // Empty positions are silent beats; lines follow their configured pause.
 func (t *Tab) PlaybackNotes() ([]PlaybackNote, time.Duration, error) {
 	if t == nil {
-		return nil, 0, errors.New("tab is nil")
+		return nil, 0, errors.New("song is nil")
 	}
 	copied := *t
 	copied.Normalize()
@@ -48,6 +48,9 @@ func (t *Tab) PlaybackNotes() ([]PlaybackNote, time.Duration, error) {
 	notes := make([]PlaybackNote, 0)
 	var offset time.Duration
 	for lineIndex, line := range copied.Lines {
+		if copied.LineType(lineIndex) != LineTypeTab {
+			continue
+		}
 		for _, measure := range line.Measures {
 			for _, beat := range measure.Beats {
 				base, ok := tuner.StringByNumber(beat.String)
@@ -80,12 +83,12 @@ func (t *Tab) PlaybackNotes() ([]PlaybackNote, time.Duration, error) {
 		}
 	}
 	if len(notes) == 0 {
-		return nil, 0, errors.New("tab has no notes to play")
+		return nil, 0, errors.New("song has no notes to play")
 	}
 
 	total := offset + playbackTail
 	if total > MaxPlaybackDuration {
-		return nil, 0, fmt.Errorf("tab is too long to play (maximum %s)", MaxPlaybackDuration)
+		return nil, 0, fmt.Errorf("song is too long to play (maximum %s)", MaxPlaybackDuration)
 	}
 	return notes, total, nil
 }

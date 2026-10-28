@@ -80,6 +80,9 @@ func TestNormalizeDefaults(t *testing.T) {
 	if tab.Version != CurrentVersion || tab.Tuning != StandardTuning {
 		t.Fatalf("unexpected defaults: %+v", tab)
 	}
+	if tab.Type != SongTypeTab || tab.Lines[0].Type != LineTypeTab {
+		t.Fatalf("unexpected song type defaults: %+v", tab)
+	}
 	if len(tab.Lines) != 1 || len(tab.Lines[0].Measures) != 8 {
 		t.Fatalf("unexpected default lines: %+v", tab.Lines)
 	}
@@ -96,7 +99,10 @@ func TestValidate(t *testing.T) {
 		{name: "valid", tab: sampleTab(), ok: true},
 		{name: "empty lines", tab: Tab{Version: CurrentVersion}, ok: true},
 		{name: "legacy version", tab: Tab{Version: 1}, ok: true},
-		{name: "bad version", tab: Tab{Version: 3}, ok: false},
+		{name: "bad version", tab: Tab{Version: 4}, ok: false},
+		{name: "bad song type", tab: Tab{Version: CurrentVersion, Type: "riff"}, ok: false},
+		{name: "long strumming", tab: Tab{Version: CurrentVersion, Strumming: strings.Repeat("D", MaxStrumming+1)}, ok: false},
+		{name: "long chord", tab: Tab{Version: CurrentVersion, Type: SongTypeChord, Lines: []Line{{Type: LineTypeChord, Chord: strings.Repeat("G", MaxChord+1)}}}, ok: false},
 		{name: "bad string low", tab: Tab{Version: CurrentVersion, Lines: []Line{{Measures: []Measure{{Beats: []Beat{{String: 0, Fret: 0}}}}}}}, ok: false},
 		{name: "bad string high", tab: Tab{Version: CurrentVersion, Lines: []Line{{Measures: []Measure{{Beats: []Beat{{String: 7, Fret: 0}}}}}}}, ok: false},
 		{name: "bad fret low", tab: Tab{Version: CurrentVersion, Lines: []Line{{Measures: []Measure{{Beats: []Beat{{String: 1, Fret: -1}}}}}}}, ok: false},
@@ -195,11 +201,117 @@ func TestDecodeVersion1MigratesToLine(t *testing.T) {
 	if err := Encode(&buf, tab); err != nil {
 		t.Fatalf("encode: %v", err)
 	}
-	if strings.Contains(buf.String(), "<tab version=\"1\"") || !strings.Contains(buf.String(), "<line>") {
-		t.Fatalf("expected migrated version 2 output:\n%s", buf.String())
+	if strings.Contains(buf.String(), "<tab version=\"1\"") || !strings.Contains(buf.String(), "<line") {
+		t.Fatalf("expected migrated version 3 output:\n%s", buf.String())
 	}
 	if got := strings.Count(buf.String(), "<measure>"); got != 2 {
 		t.Fatalf("got %d migrated measures, want 2:\n%s", got, buf.String())
+	}
+}
+
+func TestChordAndMixedRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	song := Tab{
+		Version:   CurrentVersion,
+		Title:     "Chord song",
+		Artist:    "Player",
+		Tuning:    StandardTuning,
+		Tempo:     90,
+		Type:      SongTypeMixed,
+		Strumming: "D DU UDU",
+		Lines: []Line{
+			{Type: LineTypeChord, Lyrics: "first line", Chord: "G A Em"},
+			{Type: LineTypeTab, Lyrics: "riff", Measures: []Measure{{Beats: []Beat{{String: 6, Fret: 3}}}}},
+			{Type: LineTypeChord, Chord: "Bsus2"},
+		},
+	}
+
+	var buf bytes.Buffer
+	if err := Encode(&buf, &song); err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+	encoded := buf.String()
+	out, err := Decode(strings.NewReader(encoded))
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if out.Type != SongTypeMixed || out.Strumming != "D DU UDU" {
+		t.Fatalf("song metadata mismatch: %+v", out)
+	}
+	if len(out.Lines) != 3 {
+		t.Fatalf("got %d lines, want 3", len(out.Lines))
+	}
+	if out.LineType(0) != LineTypeChord || out.Lines[0].Chord != "G A Em" {
+		t.Fatalf("first line mismatch: %+v", out.Lines[0])
+	}
+	if out.LineType(1) != LineTypeTab || len(out.Lines[1].Measures) != 1 {
+		t.Fatalf("second line mismatch: %+v", out.Lines[1])
+	}
+	if out.LineType(2) != LineTypeChord || out.Lines[2].Chord != "Bsus2" {
+		t.Fatalf("third line mismatch: %+v", out.Lines[2])
+	}
+	for _, want := range []string{`<tab version="3"`, `<type>mixed</type>`, `<strumming>D DU UDU</strumming>`, `<line type="chord">`, `<line type="tab">`} {
+		if !strings.Contains(encoded, want) {
+			t.Fatalf("output missing %q:\n%s", want, encoded)
+		}
+	}
+}
+
+func TestChordOnlyNormalizesLines(t *testing.T) {
+	t.Parallel()
+
+	song := Tab{
+		Version: CurrentVersion,
+		Type:    SongTypeChord,
+		Lines:   []Line{{Lyrics: "words", Measures: []Measure{{Beats: []Beat{{String: 1, Fret: 0}}}}}},
+	}
+	song.Normalize()
+	if song.Type != SongTypeChord || song.LineType(0) != LineTypeChord {
+		t.Fatalf("unexpected normalized song: %+v", song)
+	}
+	if len(song.Lines[0].Measures) != 0 {
+		t.Fatalf("chord line should not keep measures: %+v", song.Lines[0])
+	}
+	if err := song.Validate(); err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+}
+
+func TestDecodeLegacyTabDefaultsToTabType(t *testing.T) {
+	t.Parallel()
+
+	input := `<?xml version="1.0" encoding="UTF-8"?>
+<tab version="2">
+  <title>Old song</title>
+  <line><lyrics>words</lyrics><measure><beat string="1" fret="0"/></measure></line>
+</tab>`
+	song, err := Decode(strings.NewReader(input))
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if song.Type != SongTypeTab || song.LineType(0) != LineTypeTab {
+		t.Fatalf("legacy song should default to tab: %+v", song)
+	}
+}
+
+func TestStoreSummaryType(t *testing.T) {
+	t.Parallel()
+
+	store, err := NewStore(t.TempDir())
+	if err != nil {
+		t.Fatalf("new store: %v", err)
+	}
+	song := Tab{Version: CurrentVersion, Title: "Chords", Type: SongTypeChord, Lines: []Line{{Type: LineTypeChord, Chord: "G"}}}
+	if _, err := store.Save("Chords", &song); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	list, err := store.List()
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(list) != 1 || list[0].Type != SongTypeChord {
+		t.Fatalf("unexpected summary: %+v", list)
 	}
 }
 

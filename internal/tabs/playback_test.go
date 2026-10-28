@@ -112,6 +112,31 @@ func TestPlaybackSlide(t *testing.T) {
 	}
 }
 
+func TestPlaybackSkipsChordLines(t *testing.T) {
+	t.Parallel()
+
+	tab := Tab{
+		Version: CurrentVersion,
+		Type:    SongTypeMixed,
+		Tempo:   120,
+		Lines: []Line{
+			{Type: LineTypeChord, Chord: "G", Lyrics: "words"},
+			{Type: LineTypeTab, Measures: []Measure{{Beats: []Beat{{String: 1, Fret: 0}}}}},
+		},
+	}
+
+	notes, total, err := tab.PlaybackNotes()
+	if err != nil {
+		t.Fatalf("playback notes: %v", err)
+	}
+	if len(notes) != 1 || notes[0].Start != 0 {
+		t.Fatalf("unexpected notes: %+v", notes)
+	}
+	if want := 1000 * time.Millisecond; total != want {
+		t.Fatalf("total = %s, want %s", total, want)
+	}
+}
+
 func TestPlaybackNotesEmpty(t *testing.T) {
 	t.Parallel()
 

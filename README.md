@@ -6,9 +6,9 @@ A lightweight, offline-first desktop toolkit for expert guitarists, built with G
 
 - **Guitar tuner** — microphone pitch detection with note, frequency, cents deviation, and in-tune feedback. Supports auto-detect and standard tuning (E2 A2 D3 G3 B3 E4).
 - **Metronome** — configurable BPM, time signature, subdivisions, accented downbeats, live tempo changes, and tap tempo.
-- **Tab editor** — six-string tablature staff with keyboard entry (frets 0–24), slide notes, per-line pauses, cursor navigation, rests, lyrics above each staff, multiple or cloned song lines, tempo-based preview playback with live note highlighting, and local XML save/load.
+- **Songs** — save songs as tablature, chords, or both. Tab songs use a six-string staff with keyboard entry (frets 0–24), slides, per-line pauses, cursor navigation, rests, lyrics above each staff, multiple or cloned lines, tempo-based preview playback with live note highlighting, and local XML save/load. Chord songs pair lyrics with a chord line and an optional strumming pattern; mixed songs combine tab and chord lines.
 
-Tabs are stored as XML in `guitarists-tabs` inside your Documents directory:
+Songs are stored as XML in `guitarists-tabs` inside your Documents directory:
 
 - Windows: `C:\Users\<user>\Documents\guitarists-tabs`
 - Linux/macOS: `$XDG_DOCUMENTS_DIR` (or `~/Documents`)/`guitarists-tabs`
@@ -100,4 +100,4 @@ npm run build
 
 ## Project layout
 
-See [`AGENTS.md`](AGENTS.md) for the full architecture, conventions, and tab XML schema.
+See [`AGENTS.md`](AGENTS.md) for the full architecture, conventions, and song XML schema.

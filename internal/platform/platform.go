@@ -7,10 +7,10 @@ import (
 	"path/filepath"
 )
 
-// TabsDirName is the directory under the user's Documents directory where tabs are stored.
+// TabsDirName is the directory under the user's Documents directory where songs are stored.
 const TabsDirName = "guitarists-tabs"
 
-// TabsDir returns the directory used to store tablature files, creating it if needed.
+// TabsDir returns the directory used to store song files, creating it if needed.
 func TabsDir() (string, error) {
 	docs, err := DocumentsDir()
 	if err != nil {

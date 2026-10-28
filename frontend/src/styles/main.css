@@ -920,7 +920,7 @@ button:disabled {
   text-align: center;
 }
 
-/* Tab editor */
+/* Songs */
 
 .tab-layout {
   display: grid;
@@ -961,6 +961,51 @@ button:disabled {
   gap: 14px;
   flex-wrap: wrap;
   padding: 14px 0;
+}
+
+.song-mode-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding-top: 14px;
+}
+
+.song-mode-row [hidden] {
+  display: none;
+}
+
+.song-type-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 4px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--field);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.song-type-badge[data-type="chord"] {
+  border-color: rgba(240, 163, 60, 0.45);
+  color: var(--accent);
+}
+
+.song-type-badge[data-type="mixed"] {
+  border-color: rgba(78, 211, 166, 0.4);
+  color: var(--success);
+}
+
+.field-strumming {
+  flex: 1;
+  min-width: 220px;
+  max-width: 460px;
 }
 
 .tuning-badge {
@@ -1012,6 +1057,70 @@ button:disabled {
   border-color: var(--border);
 }
 
+.tab-line.is-chord {
+  background: rgba(255, 255, 255, 0.018);
+}
+
+.line-kind {
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 8px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.line-kind-chord {
+  border-color: rgba(240, 163, 60, 0.35);
+  color: var(--accent);
+}
+
+.chord-line-body {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 4px 4px 6px;
+}
+
+.chord-field,
+.chord-lyrics-field {
+  max-width: 680px;
+}
+
+.chord-input {
+  width: 100%;
+  padding: 3px 2px;
+  border: 0;
+  border-bottom: 1px dashed var(--border);
+  background: transparent;
+  color: var(--accent-strong);
+  font-family: var(--mono);
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  outline: none;
+}
+
+.chord-input::placeholder {
+  color: var(--faint);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+.chord-input:focus {
+  border-bottom-color: var(--accent);
+}
+
+.chord-lyrics-field .tab-lyrics {
+  width: 100%;
+  min-width: 0;
+  margin-top: 2px;
+}
+
 .tab-line-head {
   display: flex;
   align-items: center;
@@ -1048,6 +1157,16 @@ button:disabled {
 .line-play:hover {
   border-color: var(--border-strong);
   color: var(--text);
+}
+
+.line-play:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.line-play:disabled:hover {
+  border-color: var(--border);
+  color: var(--muted);
 }
 
 .line-play.is-playing {
@@ -1331,6 +1450,96 @@ button:disabled {
   margin: 10px 0;
   color: var(--faint);
   font-size: 12px;
+}
+
+/* New song dialog */
+
+.song-dialog {
+  width: min(540px, calc(100vw - 36px));
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: 0 28px 70px rgba(0, 0, 0, 0.55);
+}
+
+.song-dialog::backdrop {
+  background: rgba(4, 6, 10, 0.66);
+  backdrop-filter: blur(3px);
+}
+
+.song-dialog-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 24px;
+}
+
+.song-dialog-form h2 {
+  margin: 2px 0 0;
+  font-size: 21px;
+  letter-spacing: -0.015em;
+}
+
+.song-type-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.song-type-options legend {
+  margin-bottom: 8px;
+  padding: 0;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.song-type-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  background: var(--field);
+  cursor: pointer;
+}
+
+.song-type-option:has(input:checked) {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.song-type-option input {
+  margin-top: 3px;
+  accent-color: var(--accent);
+}
+
+.song-type-option strong {
+  display: block;
+  font-size: 13px;
+}
+
+.song-type-option small {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.song-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 4px;
 }
 
 /* Toasts */

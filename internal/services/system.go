@@ -20,7 +20,7 @@ func (s *SystemService) Version() string {
 	return s.version
 }
 
-// TabsDirectory returns the directory used to store tab files.
+// TabsDirectory returns the directory used to store song files.
 func (s *SystemService) TabsDirectory() (string, error) {
 	return platform.TabsDir()
 }

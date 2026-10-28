@@ -8,6 +8,8 @@ import { byId, clamp, formatBytes, formatDate, h } from "../lib/dom";
 import { showToast } from "../lib/toast";
 import type {
   GuitarString,
+  SongLineKind,
+  SongType,
   Tab,
   TabBeat,
   TabLine,
@@ -15,6 +17,8 @@ import type {
   TabSummary,
 } from "../lib/types";
 import type { View } from "../lib/view";
+
+const STANDARD_TUNING = "E2 A2 D3 G3 B3 E4";
 
 interface Cursor {
   line: number;
@@ -26,31 +30,70 @@ function emptyMeasure(): TabMeasure {
   return { beats: [] };
 }
 
-function emptyLine(measures = 8): TabLine {
+function emptyLine(kind: SongLineKind = "tab", measures = 8): TabLine {
+  if (kind === "chord") {
+    return {
+      type: "chord",
+      lyrics: "",
+      chord: "",
+      pause: 0,
+      measures: [],
+    };
+  }
   return {
+    type: "tab",
     lyrics: "",
+    chord: "",
     pause: 0,
     measures: Array.from({ length: measures }, emptyMeasure),
   };
+}
+
+function songTypeLabel(type: SongType): string {
+  switch (type) {
+    case "chord":
+      return "Chords only";
+    case "mixed":
+      return "Tab + chords";
+    default:
+      return "Tab only";
+  }
+}
+
+function lineKindLabel(kind: SongLineKind): string {
+  return kind === "chord" ? "Chord" : "Tab";
 }
 
 function noteName(note: string): string {
   return note.replace(/\d+$/, "") || note;
 }
 
-export function createTabsView(): View {
+function newSongDocument(type: SongType, title: string): Tab {
+  return {
+    version: 3,
+    title,
+    artist: "",
+    tuning: STANDARD_TUNING,
+    tempo: 120,
+    type,
+    strumming: "",
+    lines: [emptyLine(type === "chord" ? "chord" : "tab")],
+  };
+}
+
+export function createSongsView(): View {
   const element = document.createElement("section");
   element.className = "view tabs-view";
   element.innerHTML = `
     <div class="view-head">
       <div>
-        <p class="eyebrow">Tab editor</p>
+        <p class="eyebrow">Song editor</p>
         <h1>Write it down</h1>
-        <p class="lede">Six strings on a staff, just like tab you read. Click a position, type a fret, and add a line whenever the song moves to a new phrase.</p>
+        <p class="lede">Save songs as tablature, chords, or both. Chord songs keep lyrics with a chord line and an optional strumming pattern up top.</p>
       </div>
       <div class="head-actions">
-        <button class="btn" id="tab-new" type="button">New</button>
-        <button class="btn btn-primary" id="tab-save" type="button">Save tab</button>
+        <button class="btn" id="tab-new" type="button">New song</button>
+        <button class="btn btn-primary" id="tab-save" type="button">Save song</button>
       </div>
     </div>
     <div class="tab-layout">
@@ -73,11 +116,19 @@ export function createTabsView(): View {
             <input id="tab-name" type="text" placeholder="Song name" maxlength="100" />
           </label>
         </div>
+        <div class="song-mode-row">
+          <span class="song-type-badge" id="song-type" data-type="tab">Tab only</span>
+          <label class="field field-strumming" id="song-strumming-field" for="song-strumming" hidden>
+            <span class="field-label">Strumming pattern</span>
+            <input id="song-strumming" type="text" placeholder="e.g. D DU UDU" maxlength="200" />
+          </label>
+        </div>
         <div class="tab-toolbar">
           <span class="tuning-badge" id="tab-tuning">E2 A2 D3 G3 B3 E4</span>
           <div class="toolbar-actions">
             <button class="btn btn-small btn-play" id="tab-play" type="button">Play</button>
-            <button class="btn btn-small" id="tab-add-line" type="button">Add line</button>
+            <button class="btn btn-small" id="tab-add-line" type="button">Add tab line</button>
+            <button class="btn btn-small" id="tab-add-chord-line" type="button">Add chord line</button>
             <button class="btn btn-small" id="tab-clone-line" type="button">Clone line</button>
             <button class="btn btn-small" id="tab-remove-line" type="button">Remove line</button>
             <button class="btn btn-small" id="tab-add-measure" type="button">Add position</button>
@@ -85,19 +136,63 @@ export function createTabsView(): View {
           </div>
         </div>
         <div class="tab-scroll">
-          <div class="tab-lines" id="tab-lines" tabindex="0" role="grid" aria-label="Tablature editor"></div>
+          <div class="tab-lines" id="tab-lines" tabindex="0" role="grid" aria-label="Song editor"></div>
         </div>
-        <p class="hint">Click a string position, then type a fret from 0 to 24. Arrow keys move along the staff and across lines. Backspace or R clears the note. Lyrics sit above each line; use Add line for another six-string staff. Press Ctrl+S (⌘S on macOS) to save.</p>
+        <p class="hint" id="song-hint">Click a string position on a tab line, then type a fret from 0 to 24. Arrow keys move along the staff. Backspace or R clears a note. Add chord lines to write lyrics with a chord above them. Press Ctrl+S (⌘S on macOS) to save.</p>
       </div>
       <aside class="panel tab-library">
         <div class="library-head">
-          <h2>Library</h2>
+          <h2>Songs</h2>
           <button class="btn btn-small" id="tab-refresh" type="button">Refresh</button>
         </div>
         <p class="hint tab-dir" id="tab-dir"></p>
         <div class="tab-list" id="tab-list"></div>
       </aside>
     </div>
+    <dialog class="song-dialog" id="tab-new-dialog">
+      <form class="song-dialog-form" id="tab-new-form">
+        <div>
+          <p class="eyebrow">New song</p>
+          <h2>Start a song</h2>
+        </div>
+        <label class="field" for="new-song-title">
+          <span class="field-label">Title</span>
+          <input id="new-song-title" type="text" placeholder="Untitled" maxlength="200" />
+        </label>
+        <label class="field" for="new-song-name">
+          <span class="field-label">File name</span>
+          <input id="new-song-name" type="text" placeholder="Song name" maxlength="100" />
+        </label>
+        <fieldset class="song-type-options">
+          <legend>Song type</legend>
+          <label class="song-type-option">
+            <input type="radio" name="song-type" value="tab" checked />
+            <span>
+              <strong>Tab only</strong>
+              <small>Six-string tablature with lyrics for each line.</small>
+            </span>
+          </label>
+          <label class="song-type-option">
+            <input type="radio" name="song-type" value="chord" />
+            <span>
+              <strong>Chords only</strong>
+              <small>Lyrics with a chord line and a strumming pattern.</small>
+            </span>
+          </label>
+          <label class="song-type-option">
+            <input type="radio" name="song-type" value="mixed" />
+            <span>
+              <strong>Tab + chords</strong>
+              <small>Mix tablature lines and chord lines in one song.</small>
+            </span>
+          </label>
+        </fieldset>
+        <div class="song-dialog-actions">
+          <button class="btn" id="new-song-cancel" type="button">Cancel</button>
+          <button class="btn btn-primary" type="submit">Create song</button>
+        </div>
+      </form>
+    </dialog>
   `;
 
   const linesEl = byId<HTMLDivElement>(element, "tab-lines");
@@ -107,19 +202,23 @@ export function createTabsView(): View {
   const nameInput = byId<HTMLInputElement>(element, "tab-name");
   const tuningEl = byId<HTMLElement>(element, "tab-tuning");
   const dirtyEl = byId<HTMLElement>(element, "tab-dirty");
+  const typeEl = byId<HTMLElement>(element, "song-type");
+  const strummingField = byId<HTMLElement>(element, "song-strumming-field");
+  const strummingInput = byId<HTMLInputElement>(element, "song-strumming");
   const listEl = byId<HTMLDivElement>(element, "tab-list");
   const dirEl = byId<HTMLParagraphElement>(element, "tab-dir");
   const removeLineButton = byId<HTMLButtonElement>(element, "tab-remove-line");
+  const addLineButton = byId<HTMLButtonElement>(element, "tab-add-line");
+  const addChordLineButton = byId<HTMLButtonElement>(element, "tab-add-chord-line");
+  const addMeasureButton = byId<HTMLButtonElement>(element, "tab-add-measure");
+  const removeMeasureButton = byId<HTMLButtonElement>(element, "tab-remove-measure");
   const playButton = byId<HTMLButtonElement>(element, "tab-play");
+  const newDialog = byId<HTMLDialogElement>(element, "tab-new-dialog");
+  const newForm = byId<HTMLFormElement>(element, "tab-new-form");
+  const newTitleInput = byId<HTMLInputElement>(element, "new-song-title");
+  const newNameInput = byId<HTMLInputElement>(element, "new-song-name");
 
-  let tab: Tab = {
-    version: 2,
-    title: "",
-    artist: "",
-    tuning: "E2 A2 D3 G3 B3 E4",
-    tempo: 120,
-    lines: [emptyLine()],
-  };
+  let tab: Tab = newSongDocument("tab", "");
   let strings: GuitarString[] = [];
   let cursor: Cursor = { line: 0, measure: 0, string: 1 };
   let currentName = "";
@@ -156,10 +255,31 @@ export function createTabsView(): View {
     return tab.lines[cursor.line] ?? tab.lines[0];
   }
 
+  function hasTabNotes(): boolean {
+    return tab.lines.some(
+      (line) => line.type === "tab" && line.measures.some((measure) => measure.beats.length > 0),
+    );
+  }
+
   function markDirty(value = true): void {
     dirty = value;
     dirtyEl.textContent = value ? "unsaved" : "saved";
     dirtyEl.classList.toggle("is-dirty", value);
+  }
+
+  function updateToolbarState(): void {
+    const line = activeLine();
+    const tabLineActive = line?.type === "tab";
+    addLineButton.hidden = tab.type === "chord";
+    addChordLineButton.hidden = tab.type === "tab";
+    addMeasureButton.hidden = tab.type === "chord" || !tabLineActive;
+    removeMeasureButton.hidden = tab.type === "chord" || !tabLineActive;
+    addMeasureButton.disabled = !tabLineActive;
+    removeMeasureButton.disabled = !tabLineActive;
+    removeLineButton.disabled = tab.lines.length <= 1;
+    tuningEl.hidden = tab.type === "chord";
+    playButton.hidden = tab.type === "chord";
+    playButton.disabled = !hasTabNotes();
   }
 
   function syncForm(): void {
@@ -168,7 +288,12 @@ export function createTabsView(): View {
     tempoInput.value = String(tab.tempo);
     nameInput.value = currentName;
     tuningEl.textContent = tab.tuning || "Standard";
+    typeEl.textContent = songTypeLabel(tab.type);
+    typeEl.dataset.type = tab.type;
+    strummingInput.value = tab.strumming;
+    strummingField.hidden = tab.type === "tab";
     markDirty(dirty);
+    updateToolbarState();
   }
 
   function beatAt(measure: TabMeasure | undefined, stringNumber: number): TabBeat | undefined {
@@ -194,38 +319,14 @@ export function createTabsView(): View {
     return nodes;
   }
 
-  function renderLine(line: TabLine, lineIndex: number): HTMLElement {
-    const lineEl = h("section", "tab-line");
-    lineEl.dataset.line = String(lineIndex);
-    lineEl.setAttribute("role", "rowgroup");
-    lineEl.setAttribute("aria-label", `Line ${lineIndex + 1}`);
-    if (lineIndex === cursor.line) {
-      lineEl.classList.add("is-active");
-    }
-
-    const head = h("div", "tab-line-head");
-    head.append(h("span", "line-label", `Line ${lineIndex + 1}`));
-
-    const linePlay = h("button", "line-play");
-    linePlay.type = "button";
-    linePlay.dataset.line = String(lineIndex);
-    const lineIsPlaying = playing && playingLine === lineIndex;
-    linePlay.textContent = lineIsPlaying ? "Stop" : "Play";
-    linePlay.classList.toggle("is-playing", lineIsPlaying);
-    linePlay.setAttribute("aria-label", `${lineIsPlaying ? "Stop" : "Play"} line ${lineIndex + 1}`);
-    linePlay.addEventListener("click", (event) => {
-      event.stopPropagation();
-      if (playing && playingLine === lineIndex) {
-        void stopPlayback();
-      } else {
-        void playLine(lineIndex);
-      }
-    });
-    head.append(linePlay);
-
+  function createLyricsInput(
+    line: TabLine,
+    lineIndex: number,
+    className = "tab-lyrics",
+  ): HTMLInputElement {
     const lyrics = document.createElement("input");
     lyrics.type = "text";
-    lyrics.className = "tab-lyrics";
+    lyrics.className = className;
     lyrics.value = line.lyrics;
     lyrics.placeholder = "Lyrics for this line…";
     lyrics.maxLength = 2000;
@@ -239,17 +340,119 @@ export function createTabsView(): View {
       if (event.key === "Enter") {
         event.preventDefault();
         lyrics.blur();
-        linesEl.focus();
-      } else if (event.key === "Tab" && !event.shiftKey) {
+        if (line.type === "tab") {
+          cursor.line = lineIndex;
+          clampCursor();
+          clearFretBuffer();
+          renderLines();
+          linesEl.focus();
+        } else {
+          focusNextLine(lineIndex);
+        }
+      } else if (event.key === "Tab") {
         event.preventDefault();
-        cursor.line = lineIndex;
-        clampCursor();
-        clearFretBuffer();
-        renderLines();
-        linesEl.focus();
+        if (event.shiftKey) {
+          if (lineIndex > 0) {
+            focusLyrics(lineIndex - 1);
+          }
+        } else if (line.type === "tab") {
+          cursor.line = lineIndex;
+          clampCursor();
+          clearFretBuffer();
+          renderLines();
+          linesEl.focus();
+        } else {
+          focusNextLine(lineIndex);
+        }
       }
     });
-    head.append(lyrics);
+    return lyrics;
+  }
+
+  function selectLine(lineIndex: number): void {
+    if (cursor.line === lineIndex) {
+      return;
+    }
+    cursor.line = lineIndex;
+    cursor.measure = 0;
+    cursor.string = 1;
+    for (const node of linesEl.querySelectorAll<HTMLElement>(".tab-line")) {
+      node.classList.toggle("is-active", Number(node.dataset.line) === lineIndex);
+    }
+    updateToolbarState();
+  }
+
+  function renderLine(line: TabLine, lineIndex: number): HTMLElement {
+    const lineEl = h("section", "tab-line");
+    lineEl.dataset.line = String(lineIndex);
+    lineEl.setAttribute("role", "rowgroup");
+    lineEl.setAttribute("aria-label", `Line ${lineIndex + 1}`);
+    lineEl.classList.toggle("is-chord", line.type === "chord");
+    if (lineIndex === cursor.line) {
+      lineEl.classList.add("is-active");
+    }
+    lineEl.addEventListener("click", () => selectLine(lineIndex));
+    lineEl.addEventListener("focusin", () => selectLine(lineIndex));
+
+    const head = h("div", "tab-line-head");
+    head.append(h("span", "line-label", `Line ${lineIndex + 1}`));
+    head.append(h("span", `line-kind line-kind-${line.type}`, lineKindLabel(line.type)));
+
+    if (line.type === "chord") {
+      lineEl.append(head);
+
+      const body = h("div", "chord-line-body");
+      const chordField = h("label", "field chord-field");
+      chordField.append(h("span", "field-label", "Chord"));
+      const chordInput = document.createElement("input");
+      chordInput.type = "text";
+      chordInput.className = "chord-input";
+      chordInput.value = line.chord;
+      chordInput.placeholder = "e.g. G, Am, Bsus2 or a short progression";
+      chordInput.maxLength = 200;
+      chordInput.dataset.line = String(lineIndex);
+      chordInput.setAttribute("aria-label", `Chord for line ${lineIndex + 1}`);
+      chordInput.addEventListener("input", () => {
+        line.chord = chordInput.value;
+        markDirty();
+      });
+      chordInput.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || (event.key === "Tab" && !event.shiftKey)) {
+          event.preventDefault();
+          focusLyrics(lineIndex);
+        } else if (event.key === "Tab" && event.shiftKey && lineIndex > 0) {
+          event.preventDefault();
+          focusLyrics(lineIndex - 1);
+        }
+      });
+      chordField.append(chordInput);
+
+      const lyricsField = h("label", "field chord-lyrics-field");
+      lyricsField.append(h("span", "field-label", "Lyrics"));
+      lyricsField.append(createLyricsInput(line, lineIndex, "tab-lyrics chord-lyrics"));
+      body.append(chordField, lyricsField);
+      lineEl.append(body);
+      return lineEl;
+    }
+
+    const linePlay = h("button", "line-play");
+    linePlay.type = "button";
+    linePlay.dataset.line = String(lineIndex);
+    const lineIsPlaying = playing && playingLine === lineIndex;
+    linePlay.textContent = lineIsPlaying ? "Stop" : "Play";
+    linePlay.classList.toggle("is-playing", lineIsPlaying);
+    linePlay.disabled = !lineIsPlaying && line.measures.every((measure) => measure.beats.length === 0);
+    linePlay.setAttribute("aria-label", `${lineIsPlaying ? "Stop" : "Play"} line ${lineIndex + 1}`);
+    linePlay.addEventListener("click", (event) => {
+      event.stopPropagation();
+      if (playing && playingLine === lineIndex) {
+        void stopPlayback();
+      } else {
+        void playLine(lineIndex);
+      }
+    });
+    head.append(linePlay);
+    head.append(createLyricsInput(line, lineIndex));
 
     const pauseLabel = h("label", "line-pause");
     pauseLabel.append(h("span", "line-pause-label", "Pause"));
@@ -330,7 +533,7 @@ export function createTabsView(): View {
   function renderLines(): void {
     playbackCells.clear();
     linesEl.replaceChildren(...tab.lines.map(renderLine));
-    removeLineButton.disabled = tab.lines.length <= 1;
+    updateToolbarState();
   }
 
   function clampCursor(): void {
@@ -347,16 +550,40 @@ export function createTabsView(): View {
     slideMode = false;
   }
 
+  function adjacentTabLine(from: number, direction: number): number {
+    let target = from + direction;
+    while (target >= 0 && target < tab.lines.length && tab.lines[target].type !== "tab") {
+      target += direction;
+    }
+    if (target < 0 || target >= tab.lines.length) {
+      return from;
+    }
+    return target;
+  }
+
   function moveCursor(measureDelta: number, stringDelta: number): void {
+    if (activeLine().type !== "tab") {
+      return;
+    }
     clearFretBuffer();
     if (measureDelta !== 0) {
       let target = cursor.measure + measureDelta;
-      if (target < 0 && cursor.line > 0) {
-        cursor.line -= 1;
-        target = activeLine().measures.length - 1;
-      } else if (target >= activeLine().measures.length && cursor.line < tab.lines.length - 1) {
-        cursor.line += 1;
-        target = 0;
+      if (target < 0) {
+        const previous = adjacentTabLine(cursor.line, -1);
+        if (previous !== cursor.line) {
+          cursor.line = previous;
+          target = activeLine().measures.length - 1;
+        } else {
+          target = 0;
+        }
+      } else if (target >= activeLine().measures.length) {
+        const next = adjacentTabLine(cursor.line, 1);
+        if (next !== cursor.line) {
+          cursor.line = next;
+          target = 0;
+        } else {
+          target = activeLine().measures.length - 1;
+        }
       }
       cursor.measure = clamp(target, 0, Math.max(activeLine().measures.length - 1, 0));
     }
@@ -370,7 +597,11 @@ export function createTabsView(): View {
     if (fret < 0 || fret > 24) {
       return;
     }
-    const measure = ensureMeasure(activeLine(), cursor.measure);
+    const line = activeLine();
+    if (line.type !== "tab") {
+      return;
+    }
+    const measure = ensureMeasure(line, cursor.measure);
     measure.beats = measure.beats.filter((beat) => beat.string !== cursor.string);
     measure.beats.push({ string: cursor.string, fret });
     measure.beats.sort((a, b) => a.string - b.string);
@@ -380,7 +611,11 @@ export function createTabsView(): View {
 
   function clearCell(): void {
     clearFretBuffer();
-    const measure = activeLine().measures[cursor.measure];
+    const line = activeLine();
+    if (line.type !== "tab") {
+      return;
+    }
+    const measure = line.measures[cursor.measure];
     if (!measure) {
       return;
     }
@@ -409,7 +644,11 @@ export function createTabsView(): View {
   }
 
   function startSlide(): void {
-    const beat = beatAt(activeLine().measures[cursor.measure], cursor.string);
+    const line = activeLine();
+    if (line.type !== "tab") {
+      return;
+    }
+    const beat = beatAt(line.measures[cursor.measure], cursor.string);
     if (!beat) {
       return;
     }
@@ -431,7 +670,11 @@ export function createTabsView(): View {
   }
 
   function typeSlideDigit(digit: string): void {
-    const beat = beatAt(activeLine().measures[cursor.measure], cursor.string);
+    const line = activeLine();
+    if (line.type !== "tab") {
+      return;
+    }
+    const beat = beatAt(line.measures[cursor.measure], cursor.string);
     if (!beat) {
       clearFretBuffer();
       return;
@@ -484,6 +727,9 @@ export function createTabsView(): View {
     if (event.altKey || event.ctrlKey || event.metaKey) {
       return;
     }
+    if (activeLine().type !== "tab") {
+      return;
+    }
     if (event.key === "/") {
       event.preventDefault();
       startSlide();
@@ -505,7 +751,7 @@ export function createTabsView(): View {
       } else if (cursor.line + 1 < tab.lines.length) {
         focusLyrics(cursor.line + 1);
       } else {
-        addLine(false);
+        addLine("tab");
         focusLyrics(cursor.line);
       }
       return;
@@ -562,33 +808,59 @@ export function createTabsView(): View {
     }
   });
 
-  function normalizeLine(line: Partial<TabLine> | undefined): TabLine {
-    const measures = Array.isArray(line?.measures)
-      ? line.measures.map((measure) => ({
-          ...measure,
-          beats: Array.isArray(measure.beats) ? measure.beats : [],
-        }))
-      : [];
+  function normalizeLine(line: Partial<TabLine> | undefined, kind: SongLineKind): TabLine {
+    const measures =
+      kind === "tab" && Array.isArray(line?.measures)
+        ? line.measures.map((measure) => ({
+            ...measure,
+            beats: Array.isArray(measure.beats) ? measure.beats : [],
+          }))
+        : [];
     return {
+      type: kind,
       lyrics: typeof line?.lyrics === "string" ? line.lyrics : "",
+      chord: kind === "chord" && typeof line?.chord === "string" ? line.chord : "",
       pause: typeof line?.pause === "number" ? line.pause : 0,
-      measures: measures.length ? measures : [emptyMeasure()],
+      measures: kind === "tab" ? (measures.length ? measures : [emptyMeasure()]) : [],
     };
   }
 
   function normalizeTab(tabData: Tab): Tab {
-    const raw = tabData as Tab & { measures?: TabMeasure[] };
-    const hasLines = Array.isArray(raw.lines) && raw.lines.length > 0;
-    const lines = hasLines
-      ? raw.lines.map(normalizeLine)
-      : [normalizeLine({ measures: raw.measures })];
+    const raw = tabData as Partial<Tab> & {
+      measures?: TabMeasure[];
+      lines?: Array<Partial<TabLine>>;
+    };
+    const rawType: SongType =
+      raw.type === "chord" || raw.type === "mixed" || raw.type === "tab" ? raw.type : "tab";
+    const kindFor = (line: Partial<TabLine> | undefined): SongLineKind => {
+      if (rawType === "tab") {
+        return "tab";
+      }
+      if (rawType === "chord") {
+        return "chord";
+      }
+      if (line?.type === "chord" || line?.type === "tab") {
+        return line.type;
+      }
+      if (typeof line?.chord === "string" && line.chord !== "" && !line.measures?.length) {
+        return "chord";
+      }
+      return "tab";
+    };
+    const rawLines: Array<Partial<TabLine>> =
+      Array.isArray(raw.lines) && raw.lines.length > 0
+        ? raw.lines
+        : [{ measures: raw.measures }];
+    const lines = rawLines.map((line) => normalizeLine(line, kindFor(line)));
     return {
-      ...tabData,
-      title: tabData.title ?? "",
-      artist: tabData.artist ?? "",
-      tuning: tabData.tuning || "E2 A2 D3 G3 B3 E4",
-      tempo: tabData.tempo ?? 120,
-      lines,
+      version: 3,
+      title: typeof raw.title === "string" ? raw.title : "",
+      artist: typeof raw.artist === "string" ? raw.artist : "",
+      tuning: typeof raw.tuning === "string" && raw.tuning ? raw.tuning : STANDARD_TUNING,
+      tempo: typeof raw.tempo === "number" ? raw.tempo : 120,
+      type: rawType,
+      strumming: typeof raw.strumming === "string" ? raw.strumming : "",
+      lines: lines.length ? lines : [emptyLine(rawType === "chord" ? "chord" : "tab")],
     };
   }
 
@@ -600,7 +872,7 @@ export function createTabsView(): View {
     currentName = name;
     cursor = { line: 0, measure: 0, string: 1 };
     clearFretBuffer();
-    markDirty(false);
+    dirty = false;
     syncForm();
     renderLines();
   }
@@ -619,15 +891,22 @@ export function createTabsView(): View {
     currentName = nameInput.value;
     markDirty();
   });
+  strummingInput.addEventListener("input", () => {
+    tab.strumming = strummingInput.value;
+    markDirty();
+  });
 
-  function addLine(focusGrid = true): void {
-    const count = activeLine().measures.length;
+  function addLine(kind?: SongLineKind): void {
+    const requested = kind ?? (tab.type === "chord" ? "chord" : "tab");
+    const measureCount = tab.lines.find((line) => line.type === "tab")?.measures.length ?? 8;
     const insertAt = cursor.line + 1;
-    tab.lines.splice(insertAt, 0, emptyLine(count));
+    tab.lines.splice(insertAt, 0, emptyLine(requested, measureCount));
     cursor = { line: insertAt, measure: 0, string: 1 };
     markDirty();
     renderLines();
-    if (focusGrid) {
+    if (requested === "chord") {
+      focusChord(insertAt);
+    } else {
       linesEl.focus();
     }
   }
@@ -643,28 +922,68 @@ export function createTabsView(): View {
     input?.focus();
   }
 
-  byId<HTMLButtonElement>(element, "tab-add-line").addEventListener("click", () => {
-    addLine();
+  function focusChord(lineIndex: number): void {
+    cursor.line = clamp(lineIndex, 0, tab.lines.length - 1);
+    clampCursor();
+    clearFretBuffer();
+    renderLines();
+    const input = linesEl.querySelector<HTMLInputElement>(
+      `.chord-input[data-line="${cursor.line}"]`,
+    );
+    input?.focus();
+  }
+
+  function focusNextLine(lineIndex: number): void {
+    if (lineIndex + 1 < tab.lines.length) {
+      focusLyrics(lineIndex + 1);
+      return;
+    }
+    const kind = tab.lines[lineIndex]?.type === "chord" ? "chord" : "tab";
+    addLine(kind);
+    focusLyrics(cursor.line);
+  }
+
+  addLineButton.addEventListener("click", () => {
+    addLine("tab");
+  });
+
+  addChordLineButton.addEventListener("click", () => {
+    addLine("chord");
   });
 
   byId<HTMLButtonElement>(element, "tab-clone-line").addEventListener("click", () => {
     const source = activeLine();
-    const copy: TabLine = {
-      lyrics: source.lyrics,
-      pause: source.pause,
-      measures: source.measures.map((measure) => ({
-        beats: measure.beats.map((beat) => ({ ...beat })),
-      })),
-    };
+    const copy: TabLine =
+      source.type === "chord"
+        ? {
+            type: "chord",
+            lyrics: source.lyrics,
+            chord: source.chord,
+            pause: source.pause,
+            measures: [],
+          }
+        : {
+            type: "tab",
+            lyrics: source.lyrics,
+            chord: "",
+            pause: source.pause,
+            measures: source.measures.map((measure) => ({
+              beats: measure.beats.map((beat) => ({ ...beat })),
+            })),
+          };
     const insertAt = cursor.line + 1;
     tab.lines.splice(insertAt, 0, copy);
     cursor = { line: insertAt, measure: 0, string: 1 };
     markDirty();
     renderLines();
-    linesEl.focus();
+    if (copy.type === "chord") {
+      focusChord(insertAt);
+    } else {
+      linesEl.focus();
+    }
   });
 
-  byId<HTMLButtonElement>(element, "tab-remove-line").addEventListener("click", () => {
+  removeLineButton.addEventListener("click", () => {
     if (tab.lines.length <= 1) {
       return;
     }
@@ -676,8 +995,11 @@ export function createTabsView(): View {
     linesEl.focus();
   });
 
-  byId<HTMLButtonElement>(element, "tab-add-measure").addEventListener("click", () => {
+  addMeasureButton.addEventListener("click", () => {
     const line = activeLine();
+    if (line.type !== "tab") {
+      return;
+    }
     line.measures.push(emptyMeasure());
     cursor.measure = line.measures.length - 1;
     markDirty();
@@ -685,8 +1007,11 @@ export function createTabsView(): View {
     linesEl.focus();
   });
 
-  byId<HTMLButtonElement>(element, "tab-remove-measure").addEventListener("click", () => {
+  removeMeasureButton.addEventListener("click", () => {
     const line = activeLine();
+    if (line.type !== "tab") {
+      return;
+    }
     if (line.measures.length <= 1) {
       line.measures[0] = emptyMeasure();
     } else {
@@ -706,7 +1031,7 @@ export function createTabsView(): View {
 
     lineIndices.forEach((lineIndex, order) => {
       const source = tab.lines[lineIndex];
-      if (!source) {
+      if (!source || source.type !== "tab") {
         return;
       }
       source.measures.forEach((measure, measureIndex) => {
@@ -793,7 +1118,7 @@ export function createTabsView(): View {
   function updatePlaybackButtons(): void {
     playButton.textContent = playing ? "Stop" : "Play";
     playButton.classList.toggle("is-playing", playing);
-    playButton.setAttribute("aria-label", playing ? "Stop tab playback" : "Play whole tab");
+    playButton.setAttribute("aria-label", playing ? "Stop song playback" : "Play whole song");
     for (const button of linesEl.querySelectorAll<HTMLButtonElement>(".line-play")) {
       const line = Number(button.dataset.line);
       const current = playing && playingLine === line;
@@ -804,6 +1129,10 @@ export function createTabsView(): View {
   }
 
   async function playTab(): Promise<void> {
+    if (!hasTabNotes()) {
+      showToast("Add some tab notes before playing.", "error");
+      return;
+    }
     try {
       await TabService.play(tab);
       applyPlaybackState(true, -1);
@@ -814,6 +1143,10 @@ export function createTabsView(): View {
   }
 
   async function playLine(line: number): Promise<void> {
+    if (tab.lines[line]?.type !== "tab") {
+      showToast("Chord lines have no tab notes to play.", "error");
+      return;
+    }
     try {
       await TabService.playLine(tab, line);
       applyPlaybackState(true, line);
@@ -845,7 +1178,7 @@ export function createTabsView(): View {
   function renderList(summaries: TabSummary[]): void {
     listEl.replaceChildren();
     if (summaries.length === 0) {
-      listEl.append(h("p", "empty-state", "No saved tabs yet."));
+      listEl.append(h("p", "empty-state", "No saved songs yet."));
       return;
     }
     for (const summary of summaries) {
@@ -853,6 +1186,8 @@ export function createTabsView(): View {
       if (summary.name === currentName) {
         row.classList.add("is-current");
       }
+      const summaryType: SongType =
+        summary.type === "chord" || summary.type === "mixed" ? summary.type : "tab";
       const loadButton = h("button", "tab-list-load");
       loadButton.type = "button";
       loadButton.append(h("span", "item-title", summary.title || summary.name.replace(/\.xml$/i, "")));
@@ -860,7 +1195,7 @@ export function createTabsView(): View {
         h(
           "span",
           "item-meta",
-          `${summary.name} · ${formatBytes(summary.size)} · ${formatDate(summary.modified)}`,
+          `${songTypeLabel(summaryType)} · ${summary.name} · ${formatBytes(summary.size)} · ${formatDate(summary.modified)}`,
         ),
       );
       loadButton.addEventListener("click", () => {
@@ -906,14 +1241,47 @@ export function createTabsView(): View {
     }
   }
 
-  async function newTab(): Promise<void> {
-    try {
-      applyLoaded(await TabService.newTab(), "");
-      await refreshList();
-    } catch (error) {
-      showToast(errorMessage(error), "error");
+  function openNewSongDialog(): void {
+    newTitleInput.value = "";
+    newNameInput.value = "";
+    const defaultType = newForm.querySelector<HTMLInputElement>(
+      'input[name="song-type"][value="tab"]',
+    );
+    if (defaultType) {
+      defaultType.checked = true;
+    }
+    if (!newDialog.open) {
+      newDialog.showModal();
+    }
+    newTitleInput.focus();
+  }
+
+  function createNewSong(): void {
+    const selected = newForm.querySelector<HTMLInputElement>(
+      'input[name="song-type"]:checked',
+    );
+    const rawType = selected?.value ?? "tab";
+    const type: SongType = rawType === "chord" || rawType === "mixed" ? rawType : "tab";
+    const title = newTitleInput.value.trim();
+    const name = newNameInput.value.trim();
+    applyLoaded(newSongDocument(type, title), name);
+    markDirty(true);
+    newDialog.close();
+    if (type === "chord") {
+      focusChord(0);
+    } else {
+      linesEl.focus();
     }
   }
+
+  newForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    createNewSong();
+  });
+
+  byId<HTMLButtonElement>(element, "new-song-cancel").addEventListener("click", () => {
+    newDialog.close();
+  });
 
   async function saveTab(): Promise<void> {
     const fallback = tab.title.trim() || "Untitled";
@@ -931,7 +1299,7 @@ export function createTabsView(): View {
   }
 
   byId<HTMLButtonElement>(element, "tab-new").addEventListener("click", () => {
-    void newTab();
+    openNewSongDialog();
   });
   byId<HTMLButtonElement>(element, "tab-play").addEventListener("click", () => {
     if (playing) {
@@ -952,7 +1320,7 @@ export function createTabsView(): View {
   });
 
   document.addEventListener("keydown", (event) => {
-    if (!active || !(event.ctrlKey || event.metaKey) || event.altKey) {
+    if (!active || newDialog.open || !(event.ctrlKey || event.metaKey) || event.altKey) {
       return;
     }
     if (event.key.toLowerCase() !== "s") {
@@ -1005,6 +1373,9 @@ export function createTabsView(): View {
     deactivate() {
       active = false;
       clearFretBuffer();
+      if (newDialog.open) {
+        newDialog.close();
+      }
     },
   };
 }

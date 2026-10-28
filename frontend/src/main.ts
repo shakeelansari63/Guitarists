@@ -4,7 +4,7 @@ import "./styles/main.css";
 import { SystemService } from "./lib/api";
 import type { View } from "./lib/view";
 import { createMetronomeView } from "./views/metronome";
-import { createTabsView } from "./views/tabs";
+import { createSongsView } from "./views/songs";
 import { createTunerView } from "./views/tuner";
 
 const WINDOW_MIN_WIDTH = 900;
@@ -57,12 +57,12 @@ async function fitWindowToScreen(): Promise<void> {
 
 void fitWindowToScreen();
 
-type ViewName = "tuner" | "metronome" | "tabs";
+type ViewName = "tuner" | "metronome" | "songs";
 
 const viewFactories: Record<ViewName, () => View> = {
   tuner: createTunerView,
   metronome: createMetronomeView,
-  tabs: createTabsView,
+  songs: createSongsView,
 };
 
 const app = document.querySelector<HTMLDivElement>("#app");
@@ -85,7 +85,7 @@ app.innerHTML = `
       <nav class="main-nav" aria-label="Main">
         <button class="nav-button" type="button" data-view="tuner">Tuner</button>
         <button class="nav-button" type="button" data-view="metronome">Metronome</button>
-        <button class="nav-button" type="button" data-view="tabs">Tab editor</button>
+        <button class="nav-button" type="button" data-view="songs">Songs</button>
       </nav>
       <div class="version" id="app-version"></div>
     </header>
@@ -115,7 +115,7 @@ const navButtons = Array.from(
 let current: ViewName | null = null;
 
 function isViewName(value: string): value is ViewName {
-  return value === "tuner" || value === "metronome" || value === "tabs";
+  return value === "tuner" || value === "metronome" || value === "songs";
 }
 
 function showView(name: ViewName): void {
@@ -165,4 +165,4 @@ void SystemService.version()
   .catch(() => undefined);
 
 const initial = location.hash.replace(/^#/, "");
-showView(isViewName(initial) ? initial : "tuner");
+showView(initial === "tabs" ? "songs" : isViewName(initial) ? initial : "tuner");
