@@ -66,7 +66,7 @@ type Measure struct {
 }
 
 // Line is one song line. Tab lines hold positions on six strings; chord lines
-// hold a chord (or progression) above their lyrics.
+// hold lyrics with a chord (or progression) underneath.
 type Line struct {
 	Type       string       `xml:"type,attr,omitempty" json:"type"`
 	Lyrics     string       `xml:"lyrics,omitempty" json:"lyrics"`

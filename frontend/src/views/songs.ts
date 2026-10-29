@@ -138,7 +138,7 @@ export function createSongsView(): View {
         <div class="tab-scroll">
           <div class="tab-lines" id="tab-lines" tabindex="0" role="grid" aria-label="Song editor"></div>
         </div>
-        <p class="hint" id="song-hint">Click a string position on a tab line, then type a fret from 0 to 24. Arrow keys move along the staff. Backspace or R clears a note. Add chord lines to write lyrics with a chord above them. Press Ctrl+S (⌘S on macOS) to save.</p>
+        <p class="hint" id="song-hint">Click a string position on a tab line, then type a fret from 0 to 24. Arrow keys move along the staff. Backspace or R clears a note. Add chord lines to write lyrics with a chord underneath. Press Ctrl+S (⌘S on macOS) to save.</p>
       </div>
       <aside class="panel tab-library">
         <div class="library-head">
@@ -347,7 +347,7 @@ export function createSongsView(): View {
           renderLines();
           linesEl.focus();
         } else {
-          focusNextLine(lineIndex);
+          focusChord(lineIndex);
         }
       } else if (event.key === "Tab") {
         event.preventDefault();
@@ -362,7 +362,7 @@ export function createSongsView(): View {
           renderLines();
           linesEl.focus();
         } else {
-          focusNextLine(lineIndex);
+          focusChord(lineIndex);
         }
       }
     });
@@ -399,16 +399,14 @@ export function createSongsView(): View {
     head.append(h("span", `line-kind line-kind-${line.type}`, lineKindLabel(line.type)));
 
     if (line.type === "chord") {
-      lineEl.append(head);
+      const fields = h("div", "chord-line-fields");
+      fields.append(createLyricsInput(line, lineIndex, "tab-lyrics chord-lyrics"));
 
-      const body = h("div", "chord-line-body");
-      const chordField = h("label", "field chord-field");
-      chordField.append(h("span", "field-label", "Chord"));
       const chordInput = document.createElement("input");
       chordInput.type = "text";
       chordInput.className = "chord-input";
       chordInput.value = line.chord;
-      chordInput.placeholder = "e.g. G, Am, Bsus2 or a short progression";
+      chordInput.placeholder = "Chord (e.g. G, Am, Bsus2)";
       chordInput.maxLength = 200;
       chordInput.dataset.line = String(lineIndex);
       chordInput.setAttribute("aria-label", `Chord for line ${lineIndex + 1}`);
@@ -419,19 +417,15 @@ export function createSongsView(): View {
       chordInput.addEventListener("keydown", (event) => {
         if (event.key === "Enter" || (event.key === "Tab" && !event.shiftKey)) {
           event.preventDefault();
-          focusLyrics(lineIndex);
-        } else if (event.key === "Tab" && event.shiftKey && lineIndex > 0) {
+          focusNextLine(lineIndex);
+        } else if (event.key === "Tab" && event.shiftKey) {
           event.preventDefault();
-          focusLyrics(lineIndex - 1);
+          focusLyrics(lineIndex);
         }
       });
-      chordField.append(chordInput);
-
-      const lyricsField = h("label", "field chord-lyrics-field");
-      lyricsField.append(h("span", "field-label", "Lyrics"));
-      lyricsField.append(createLyricsInput(line, lineIndex, "tab-lyrics chord-lyrics"));
-      body.append(chordField, lyricsField);
-      lineEl.append(body);
+      fields.append(chordInput);
+      head.append(fields);
+      lineEl.append(head);
       return lineEl;
     }
 
@@ -482,6 +476,7 @@ export function createSongsView(): View {
 
     for (let stringNumber = 1; stringNumber <= 6; stringNumber++) {
       const label = h("div", "tab-string-label");
+      label.dataset.string = String(stringNumber);
       const fullNote = noteFor(stringNumber);
       label.title = `String ${stringNumber} (${fullNote})`;
       const shortNote = noteName(fullNote);
